@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FARMart API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+  <style>
+    body {
+      margin: 0;
+      background: #f5f6fa;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    /* Hide topbar */
+    .swagger-ui .topbar {
+      display: none !important;
+    }
+    /* Clean up borders and spacing to match premium look */
+    .swagger-ui {
+      padding-bottom: 50px;
+    }
+    .swagger-ui .info {
+      margin: 24px 0 !important;
+    }
+    .swagger-ui .info .title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1a1d26;
+    }
+    .swagger-ui .info p, .swagger-ui .info li {
+      color: #6b7185;
+      font-size: 14px;
+    }
+    .swagger-ui .scheme-container {
+      background: #ffffff !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+      border: 1px solid #e8eaef !important;
+      border-radius: 10px !important;
+      margin: 20px 0 !important;
+      padding: 16px 22px !important;
+    }
+    /* Customize Tag blocks */
+    .swagger-ui .opblock-tag-section {
+      background: #ffffff;
+      border: 1px solid #e8eaef;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .swagger-ui .opblock-tag {
+      padding: 14px 20px !important;
+      background: #fafbfd;
+      border-bottom: 1px solid #e8eaef !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      const ui = SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "BaseLayout"
+      });
+      window.ui = ui;
+    };
+  </script>
+</body>
+</html>

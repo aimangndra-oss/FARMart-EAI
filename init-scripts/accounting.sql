@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS journals (
+  id SERIAL PRIMARY KEY,
+  journal_id VARCHAR(50) NOT NULL,
+  account_type VARCHAR(50) NOT NULL,
+  amount DECIMAL(15, 2) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

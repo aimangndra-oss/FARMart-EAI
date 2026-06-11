@@ -1,0 +1,648 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "FARMart EAI API Documentation",
+    "description": "Dokumentasi API untuk sistem FARMart Enterprise Application Integration (EAI) yang terdiri dari POS Service, Inventory Service, dan Accounting Service, serta alur integrasi event-driven menggunakan RabbitMQ.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "API Gateway (Nginx)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "POS Service",
+      "description": "Layanan Point of Sale untuk mencatat transaksi penjualan"
+    },
+    {
+      "name": "Integration Middleware (RabbitMQ)",
+      "description": "Alur pengiriman pesan berbasis event (Publish/Subscribe) melalui RabbitMQ Message Broker"
+    },
+    {
+      "name": "Inventory Service",
+      "description": "Layanan manajemen stok barang (menggunakan MySQL, mendukung XML & JSON)"
+    },
+    {
+      "name": "Accounting Service",
+      "description": "Layanan pencatatan jurnal keuangan"
+    }
+  ],
+  "paths": {
+    "/api/pos/sales": {
+      "get": {
+        "tags": [
+          "POS Service"
+        ],
+        "summary": "Mendapatkan Riwayat Penjualan",
+        "description": "Mengambil hingga 50 transaksi penjualan terakhir dari database PostgreSQL.",
+        "responses": {
+          "200": {
+            "description": "Sukses mengambil riwayat penjualan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Sale"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "POS Service"
+        ],
+        "summary": "Membuat Transaksi Penjualan Baru",
+        "description": "Mencatat transaksi penjualan baru, menyimpan ke database PostgreSQL pos_db, dan menerbitkan event `sale.completed` ke RabbitMQ exchange `farmart_events`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "productId",
+                  "quantity",
+                  "price"
+                ],
+                "properties": {
+                  "productId": {
+                    "type": "integer",
+                    "example": 1,
+                    "description": "ID unik produk"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "example": 2,
+                    "description": "Jumlah produk yang terjual"
+                  },
+                  "price": {
+                    "type": "integer",
+                    "example": 15000,
+                    "description": "Harga satuan produk"
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Transaksi berhasil dibuat",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "message": {
+                        "type": "string",
+                        "example": "Sale recorded successfully"
+                      },
+                      "saleId": {
+                        "type": "integer",
+                        "example": 12
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Input tidak valid / kolom kurang lengkap"
+            },
+            "500": {
+              "description": "Kesalahan server internal"
+            }
+          }
+        }
+      }
+    },
+    "/event/sale.completed": {
+      "post": {
+        "tags": [
+          "Integration Middleware (RabbitMQ)"
+        ],
+        "summary": "Publish Event: sale.completed",
+        "description": "Event yang diterbitkan secara asinkron oleh **POS Service** ke RabbitMQ Topic Exchange `farmart_events`. Pesan ini kemudian akan dikonsumsi oleh **Integration Service** (Middleware) untuk diterjemahkan dan diteruskan secara sinkron ke **Inventory Service** (sebagai XML) dan **Accounting Service** (sebagai JSON).",
+        "requestBody": {
+          "description": "Struktur Payload Pesan Event yang dikirim via RabbitMQ",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RabbitMQ_SaleCompletedEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event berhasil diterima dan diproses oleh Integration Middleware.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "Processed"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/inventory": {
+      "get": {
+        "tags": [
+          "Inventory Service"
+        ],
+        "summary": "Mendapatkan Seluruh Stok Produk",
+        "description": "Mengambil daftar seluruh stok barang dari database MySQL inventory_db.",
+        "responses": {
+          "200": {
+            "description": "Sukses mengambil data stok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StockItem"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      }
+    },
+    "/api/inventory/inventory/update": {
+      "post": {
+        "tags": [
+          "Inventory Service"
+        ],
+        "summary": "Mengurangi Stok Produk (XML Payload)",
+        "description": "Endpoint internal yang dipanggil oleh Integration Service untuk mengurangi stok barang setelah transaksi POS berhasil. Menerima data dalam format XML.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "object",
+                "xml": {
+                  "name": "StockUpdate"
+                },
+                "properties": {
+                  "ProductId": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "Quantity": {
+                    "type": "integer",
+                    "example": 2
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stok berhasil dikurangi",
+            "content": {
+              "application/xml": {
+                "example": "<Success>Stock updated successfully</Success>"
+              }
+            }
+          },
+          "400": {
+            "description": "Payload XML tidak valid, produk tidak ditemukan, atau stok kurang",
+            "content": {
+              "application/xml": {
+                "example": "<Error>Product not found or insufficient stock</Error>"
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server internal",
+            "content": {
+              "application/xml": {
+                "example": "<Error>Internal server error</Error>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inventory/inventory/add": {
+      "post": {
+        "tags": [
+          "Inventory Service"
+        ],
+        "summary": "Restock / Tambah Stok Produk",
+        "description": "Menambahkan kuantitas stok untuk produk yang sudah ada di inventory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "product_id",
+                  "quantity"
+                ],
+                "properties": {
+                  "product_id": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "example": 50
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stok berhasil ditambahkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Stock added successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Produk tidak ditemukan atau request tidak valid"
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      }
+    },
+    "/api/inventory/inventory/adjust": {
+      "put": {
+        "tags": [
+          "Inventory Service"
+        ],
+        "summary": "Menyesuaikan Stok Produk (Set Level)",
+        "description": "Mengatur stok produk ke jumlah tertentu secara spesifik.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "product_id",
+                  "stock_level"
+                ],
+                "properties": {
+                  "product_id": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "stock_level": {
+                    "type": "integer",
+                    "example": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stok berhasil disesuaikan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Stock adjusted successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Produk tidak ditemukan atau parameter kurang"
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      }
+    },
+    "/api/inventory/inventory/create": {
+      "post": {
+        "tags": [
+          "Inventory Service"
+        ],
+        "summary": "Membuat Produk Baru di Inventory",
+        "description": "Mendaftarkan produk baru beserta jumlah stok awalnya ke database MySQL.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "product_id",
+                  "current_stock"
+                ],
+                "properties": {
+                  "product_id": {
+                    "type": "integer",
+                    "example": 4
+                  },
+                  "current_stock": {
+                    "type": "integer",
+                    "example": 150
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Produk berhasil didaftarkan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Product created successfully"
+                    },
+                    "product_id": {
+                      "type": "integer",
+                      "example": 4
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Input tidak valid"
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      }
+    },
+    "/api/accounting/accounting/journals": {
+      "get": {
+        "tags": [
+          "Accounting Service"
+        ],
+        "summary": "Mendapatkan Daftar Jurnal",
+        "description": "Mengambil data entri jurnal keuangan terakhir dari database PostgreSQL accounting_db.",
+        "responses": {
+          "200": {
+            "description": "Sukses mengambil data jurnal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JournalEntry"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      }
+    },
+    "/api/accounting/accounting/journal": {
+      "post": {
+        "tags": [
+          "Accounting Service"
+        ],
+        "summary": "Membuat Entri Jurnal Baru",
+        "description": "Endpoint internal yang dipanggil oleh Integration Service untuk mencatat jurnal keuangan secara otomatis setelah transaksi POS berhasil didelegasikan.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "journalId",
+                  "accountType",
+                  "amount"
+                ],
+                "properties": {
+                  "journalId": {
+                    "type": "string",
+                    "example": "J-EVT-1718102345",
+                    "description": "ID Unik Jurnal (biasanya berformat J-EVT-[timestamp])"
+                  },
+                  "accountType": {
+                    "type": "string",
+                    "example": "Revenue",
+                    "description": "Tipe Akun keuangan (misal: Revenue, Expense)"
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "example": 30000,
+                    "description": "Jumlah uang dicatat"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Sales from POS",
+                    "description": "Keterangan transaksi"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Jurnal berhasil dicatat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Journal entry recorded"
+                    },
+                    "id": {
+                      "type": "integer",
+                      "example": 8
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Data jurnal tidak lengkap"
+          },
+          "500": {
+            "description": "Kesalahan server internal"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Sale": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "product_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "example": 2
+          },
+          "price": {
+            "type": "integer",
+            "example": 15000
+          },
+          "total_amount": {
+            "type": "integer",
+            "example": 30000
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-11T16:00:00Z"
+          }
+        }
+      },
+      "StockItem": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "current_stock": {
+            "type": "integer",
+            "example": 98
+          }
+        }
+      },
+      "JournalEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "journal_id": {
+            "type": "string",
+            "example": "J-EVT-1718102345"
+          },
+          "account_type": {
+            "type": "string",
+            "example": "Revenue"
+          },
+          "amount": {
+            "type": "integer",
+            "example": 30000
+          },
+          "description": {
+            "type": "string",
+            "example": "Sales from POS"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-11T16:00:00Z"
+          }
+        }
+      },
+      "RabbitMQ_SaleCompletedEvent": {
+        "type": "object",
+        "description": "Payload pesan/event yang diterbitkan secara asinkron dari POS Service ke RabbitMQ dengan routing key `sale.completed`.",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "example": "EVT-1718102345",
+            "description": "ID Unik Event (format EVT-[timestamp])"
+          },
+          "eventType": {
+            "type": "string",
+            "example": "SaleCompleted",
+            "description": "Jenis event"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-11T16:00:00.000Z",
+            "description": "Waktu event diterbitkan"
+          },
+          "data": {
+            "type": "object",
+            "description": "Data payload transaksi penjualan",
+            "properties": {
+              "saleId": {
+                "type": "integer",
+                "example": 12
+              },
+              "productId": {
+                "type": "integer",
+                "example": 1
+              },
+              "quantity": {
+                "type": "integer",
+                "example": 2
+              },
+              "totalAmount": {
+                "type": "integer",
+                "example": 30000
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
